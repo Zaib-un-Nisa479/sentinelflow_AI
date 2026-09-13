@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+psycopg2-binary
+httpx
+pydantic
+python-dotenv
+certifi
+pytest
