@@ -1,4 +1,5 @@
 import base64
+import re
 import certifi
 import httpx
 import os
@@ -6,6 +7,29 @@ from datetime import datetime
 
 VT_API_KEY = os.getenv("VT_API_KEY")
 ABUSEIPDB_API_KEY = os.getenv("ABUSEIPDB_API_KEY")
+
+_IPV4_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
+_HASH_RE = re.compile(r"^[a-fA-F0-9]{32}$|^[a-fA-F0-9]{40}$|^[a-fA-F0-9]{64}$")
+
+
+def detect_ioc_type(ioc: str) -> str:
+    """
+    Infer the real indicator type from its shape, instead of trusting
+    whatever the caller passed (or didn't pass) for ioc_type. This is
+    what actually fixes the "everything scores 0/benign" bug: a full
+    URLhaus feed URL like 'http://1.2.3.4:8080/payload.exe' was being
+    sent to VirusTotal's IP-lookup endpoint because ioc_type silently
+    defaulted to 'ip' whenever a caller (a webhook test, an n8n node)
+    didn't explicitly set it.
+    """
+    ioc = ioc.strip()
+    if ioc.startswith("http://") or ioc.startswith("https://"):
+        return "url"
+    if _IPV4_RE.match(ioc):
+        return "ip"
+    if _HASH_RE.match(ioc):
+        return "hash"
+    return "domain"
 
 # Before: query_virustotal always hit the /ip_addresses/ endpoint, no matter
 # what ioc_type was passed in. A domain or hash sent through would either

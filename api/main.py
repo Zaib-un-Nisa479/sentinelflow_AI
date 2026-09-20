@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from actions import execute_action
 from database import get_connection
-from enrichment import enrich_ioc
+from enrichment import enrich_ioc, detect_ioc_type
 from metrics import get_dashboard_metrics
 from models import ActionRequest, EnrichRequest, ReportRequest
 from reports import generate_report
@@ -88,6 +88,13 @@ def find_recent_open_case(cur, ioc: str):
 
 @app.post("/enrich")
 async def enrich(req: EnrichRequest):
+    # Auto-detect the real indicator type from its shape rather than
+    # trusting whatever ioc_type was passed in (or defaulted to "ip"
+    # when nothing was specified at all). This is the actual fix for
+    # full URLs being sent to VirusTotal's IP-lookup endpoint and
+    # silently scoring 0/benign every time.
+    ioc_type = detect_ioc_type(req.ioc)
+
     conn = get_connection()
     cur = conn.cursor()
 
@@ -109,12 +116,12 @@ async def enrich(req: EnrichRequest):
             "message": "An active case for this indicator already exists; reusing it instead of creating a new one.",
         }
 
-    result = await enrich_ioc(req.ioc, req.ioc_type)
+    result = await enrich_ioc(req.ioc, ioc_type)
 
     cur.execute(
         """INSERT INTO cases (ioc, ioc_type, risk_score, verdict, source)
            VALUES (%s, %s, %s, %s, %s) RETURNING id""",
-        (req.ioc, req.ioc_type, result["riskScore"], result["verdict"], "manual_report"),
+        (req.ioc, ioc_type, result["riskScore"], result["verdict"], "manual_report"),
     )
     case_id = cur.fetchone()["id"]
 
@@ -130,10 +137,11 @@ async def enrich(req: EnrichRequest):
 
     result["caseId"] = case_id
     result["duplicate"] = False
+    result["iocType"] = ioc_type
 
     logger.info(
-        '{"event": "case_created", "caseId": %s, "ioc": "%s", "riskScore": %s, "verdict": "%s"}'
-        % (case_id, req.ioc, result["riskScore"], result["verdict"])
+        '{"event": "case_created", "caseId": %s, "ioc": "%s", "iocType": "%s", "riskScore": %s, "verdict": "%s"}'
+        % (case_id, req.ioc, ioc_type, result["riskScore"], result["verdict"])
     )
 
     # Raw vendor payloads are already logged to enrichment_log above.
