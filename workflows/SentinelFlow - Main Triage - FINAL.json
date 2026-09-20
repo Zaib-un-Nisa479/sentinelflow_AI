@@ -1,0 +1,1051 @@
+{
+  "name": "SentinelFlow - Main Triage",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "report-activity",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -32,
+        880
+      ],
+      "id": "da02d81f-2114-4484-bbb1-67927c478878",
+      "name": "The human reports something",
+      "webhookId": "91808d1a-4022-4ee3-9a58-1d6ba94808b1"
+    },
+    {
+      "parameters": {
+        "url": "https://urlhaus-api.abuse.ch/v1/urls/recent/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Auth-Key",
+              "value": "0620db4a0849c091533bef39d734a43ed1cdf07dc2c173c9"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        192,
+        592
+      ],
+      "id": "c3558b57-66b2-42bb-a29f-722ff0b109fa",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items[0].json.urls.slice(0, 2).map(entry => {\n  return {\n    json: {\n      ioc: entry.url,\n      source: \"urlhaus_feed\"\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        592
+      ],
+      "id": "49cde992-d318-4961-88b7-7cdb82d99f4c",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f78c9f0c-5100-45f6-a550-a451b1f13045",
+              "leftValue": "={{ $json.headers['x-api-secret'] }}",
+              "rightValue": "A3RGSN5Ha@",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        192,
+        880
+      ],
+      "id": "982d9c29-fb14-4b89-8800-37f8b8818e55",
+      "name": "If"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        640,
+        688
+      ],
+      "id": "26434f25-803b-4e5b-906e-c5512d2d58b8",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"error\": \"401 Unauthorized\"}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        416,
+        976
+      ],
+      "id": "01ec4f72-84b9-4c59-8b08-c459f242b8d1",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -32,
+        592
+      ],
+      "id": "27191154-ffab-4191-b12e-e8b2090f56aa",
+      "name": "The automated feed"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "acad9e2d-aecf-41ea-8efb-21285a712750",
+              "name": "=ioc",
+              "value": "={{ $json.body.ioc }}",
+              "type": "string"
+            },
+            {
+              "id": "b5f87f78-c789-44d4-98db-7479d8138dcc",
+              "name": "source",
+              "value": "manual_report",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        416,
+        784
+      ],
+      "id": "8b656bc3-6914-4541-aecf-371ec5b64df2",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=A suspicious indicator was reported: {{ $json.ioc }} (source: {{ $json.source }}). Please investigate.",
+        "options": {
+          "systemMessage": "You are a SOC triage analyst. For each indicator: (1) call the Enrichment Tool for a risk score, (2) call the ATT&CK Tool if relevant, (3) apply escalation: 70-100=block (needs approval), 40-69=review, 0-39=log only. Never act without approval. \n\nIMPORTANT: Always state the exact numeric riskScore and exact caseId returned by the Enrichment Tool in your response — do not paraphrase or omit these values, they must appear as actual numbers.\n\nExplain your reasoning briefly, citing the score and technique.",
+          "maxIterations": 4
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1456,
+        192
+      ],
+      "id": "e1f081cc-d420-4b94-8165-4c656cdaa25d",
+      "name": "AI Agent",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "openai/gpt-oss-120b",
+          "mode": "list",
+          "cachedResultName": "openai/gpt-oss-120b"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1328,
+        432
+      ],
+      "id": "427e7f70-5cd9-43da-9b1e-117192868b56",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "wZJJl5wrKavaOwpX",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Searches MITRE ATT&CK technique descriptions. Use this when the user asks about attack techniques, tactics, or how a specific threat behaves.",
+        "tableName": {
+          "__rl": true,
+          "value": "attck_documents",
+          "mode": "list",
+          "cachedResultName": "attck_documents"
+        },
+        "topK": 1,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        1456,
+        432
+      ],
+      "id": "e7f97755-76e4-47e2-9fc3-4a499203b98a",
+      "name": "Supabase Vector Store",
+      "credentials": {
+        "supabaseApi": {
+          "id": "e0mCHg6RjDA55apP",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1536,
+        640
+      ],
+      "id": "727224cd-bffe-4501-9e9e-65b61622b1aa",
+      "name": "Embeddings Google Gemini",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "FW3e8vnhtRNa17zo",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sentinelflowai-production.up.railway.app/enrich",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "4f9d63cd9651c6aa8ad63589c3d2e11cc942be62ba5c1eb5ec6f02af71b9481d"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "ioc",
+              "value": "={{ $fromAI('ioc','the indicator to check','string') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.5,
+      "position": [
+        1744,
+        432
+      ],
+      "id": "3a6a2192-e67b-432b-8db9-35980f60d27d",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $input.item.json.text || $input.item.json.output || '';\nconst match = text.match(/\\{[\\s\\S]*\\}/);\n\nlet parsed;\nlet parseError = null;\n\nif (!match) {\n  parseError = 'No JSON object found in agent output';\n} else {\n  try {\n    parsed = JSON.parse(match[0]);\n  } catch (e) {\n    parseError = `JSON parse failed: ${e.message}`;\n  }\n}\n\nif (parseError) {\n  return [{\n    json: {\n      ioc: 'UNKNOWN',\n      caseId: null,\n      riskScore: 999,\n      verdict: 'parse_error',\n      recommendedAction: 'manual_review_required',\n      parseError: parseError,\n      rawAgentOutput: text\n    }\n  }];\n}\n\nreturn [{ json: parsed }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2288,
+        192
+      ],
+      "id": "334f2f35-a229-4422-8aad-417218bc7be6",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "0cf48b3c-5bc2-46a1-90e3-86e24ad18cd8",
+              "leftValue": "={{ $json.riskScore }}",
+              "rightValue": 40,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2960,
+        448
+      ],
+      "id": "8b3c9a77-4d54-4cc5-88c3-478214142dff",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE cases SET status = 'auto_resolved', resolved_at = NOW(), attck_techniques = '{{ $json.technique }}' WHERE id = {{ $json.caseId }};",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        3184,
+        640
+      ],
+      "id": "c3451e31-67a7-4608-8404-200ce22b8fa1",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "fOB7rnEZAb8HUWft",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "fromEmail": "zaibunnisachenabian@gmail.com",
+        "toEmail": "zaibunnisachenabian@gmail.com",
+        "subject": "Approval of action",
+        "message": "=SentinelFlow flagged {{ $json.ioc }} — risk score {{ $json.riskScore }}, verdict: {{ $json.verdict }}. Approve action: {{ $json.recommendedAction }}?",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        3184,
+        448
+      ],
+      "id": "85f78fe8-855b-462e-87a9-8658012264ee",
+      "name": "Send message and wait for response",
+      "webhookId": "82ad08e3-1bcb-48b7-8168-21284acbc96d",
+      "credentials": {
+        "smtp": {
+          "id": "JwwBNuzmgG1SXGSc",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Extract these fields from this analysis as compact JSON only, nothing else, no markdown, no explanation:\n{{ $json.output }}\nFormat: {\"ioc\": \"...\", \"caseId\": ..., \"riskScore\": ..., \"verdict\": \"...\", \"recommendedAction\": \"...\", \"technique\": \"...\"}",
+        "messages": {
+          "messageValues": []
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1936,
+        192
+      ],
+      "id": "42f77d7e-5888-49de-8ff7-d175c047e390",
+      "name": "Basic LLM Chain",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        2016,
+        432
+      ],
+      "id": "60051c8d-4108-46ed-ba4f-d03da1cf79c8",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "FW3e8vnhtRNa17zo",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        864,
+        688
+      ],
+      "id": "188b60b9-76d7-428b-b59e-7cc038de2d4c",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a96219b9-1d53-484e-8acc-0b9806a5aeeb",
+              "name": "Done",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1088,
+        0
+      ],
+      "id": "bf7e98ee-f549-432a-99fe-2be2ef301706",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {
+        "amount": 25
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1088,
+        192
+      ],
+      "id": "66b55018-17a6-4e5a-bddb-7c3b64a0e69a",
+      "name": "Wait",
+      "webhookId": "fa49a12c-4fec-44f2-951a-c572f3d48133"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "4eed0386-c091-49f8-8bd1-c3f6e6d37ff1",
+              "leftValue": "={{ $json.data.approved }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3408,
+        448
+      ],
+      "id": "2fef6d11-5abb-4c9c-856c-64d57588c8c4",
+      "name": "If2"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sentinelflowai-production.up.railway.app/action",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "4f9d63cd9651c6aa8ad63589c3d2e11cc942be62ba5c1eb5ec6f02af71b9481d"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"case_id\": {{ $('Code in JavaScript1').item.json.caseId }},\n  \"action_type\": \"{{ $('Normalize Action Type').item.json.action_type }}\",\n  \"executed_by\": \"human_approved\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        3632,
+        352
+      ],
+      "id": "ff67870b-b918-4f22-b031-a830628bcc79",
+      "name": "HTTP Request2"
+    },
+    {
+      "parameters": {
+        "amount": 25
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3408,
+        640
+      ],
+      "id": "49ac3ce1-e063-4564-ad21-a518ae3f25eb",
+      "name": "Wait1",
+      "webhookId": "7c5a61e1-85e8-4e5d-9d53-634e47d4e403"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE cases SET status = 'closed', resolved_at = NOW() WHERE id = {{ $('Code in JavaScript1').item.json.caseId }};\n\nINSERT INTO approvals (case_id, requested_action, decision, decided_at)\nVALUES ({{ $('Code in JavaScript1').item.json.caseId }}, '{{ $('Code in JavaScript1').item.json.recommendedAction }}', 'declined', NOW());",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        3632,
+        544
+      ],
+      "id": "be32dd33-bd94-4ff8-8f17-f6a79c23c75d",
+      "name": "Log Declined Case",
+      "credentials": {
+        "postgres": {
+          "id": "fOB7rnEZAb8HUWft",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, ioc, status, attck_techniques FROM cases ORDER BY id DESC LIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        -32,
+        1200
+      ],
+      "id": "4127a656-c0f0-4812-9423-ae22834953b8",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "postgres": {
+          "id": "fOB7rnEZAb8HUWft",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "zaibunnisachenabian@gmail.com",
+        "toEmail": "zaibunnisachenabian@gmail.com",
+        "subject": "zaibunnisachenabian@gmail.com",
+        "emailFormat": "text",
+        "text": "=SentinelFlow: Manual review required — could not parse agent output\n=SentinelFlow flagged an item where the AI Agent's output could not be parsed into valid JSON.\n\nRaw agent output:\n{{ $json.rawAgentOutput }}\n\nParse error:\n{{ $json.parseError }}\n\nThis case was NOT auto-resolved and requires manual investigation.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2736,
+        256
+      ],
+      "id": "b3ecfd79-60dc-4acc-829d-2a2c928aa4f5",
+      "name": "Send an Email",
+      "webhookId": "6808caff-e7c0-4ecd-a72e-30a8e3b5b27a",
+      "credentials": {
+        "smtp": {
+          "id": "JwwBNuzmgG1SXGSc",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e87dbbb4-916e-4988-8837-e1235e249e90",
+              "leftValue": "={{ $json.verdict }}",
+              "rightValue": "parse_error",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2512,
+        192
+      ],
+      "id": "820054fb-bf7e-4167-9fba-39545a25d771",
+      "name": "Check Parse Error"
+    },
+    {
+      "parameters": {
+        "jsCode": "const action = ($json.recommendedAction || '').toLowerCase();\nlet action_type = 'log_only';\nif (action.includes('isolate')) action_type = 'isolate_host';\nelse if (action.includes('block')) action_type = 'block_ip';\n\nreturn [{ json: { ...$json, action_type } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2736,
+        448
+      ],
+      "id": "09d48300-a8f6-4151-b945-0bc82406a6b2",
+      "name": "Normalize Action Type"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE cases SET attck_techniques = '{{ $('Code in JavaScript1').item.json.technique }}' WHERE id = {{ $('Code in JavaScript1').item.json.caseId }};",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        3856,
+        512
+      ],
+      "id": "2e990665-75cd-4146-b3ee-a4733de44e63",
+      "name": "Update ATT&CK Technique (Approved)",
+      "credentials": {
+        "postgres": {
+          "id": "fOB7rnEZAb8HUWft",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "The human reports something": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "The automated feed": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Check Parse Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Send message and wait for response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send message and wait for response": {
+      "main": [
+        [
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Declined Case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Declined Case": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "Update ATT&CK Technique (Approved)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send an Email": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Parse Error": {
+      "main": [
+        [
+          {
+            "node": "Send an Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalize Action Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Action Type": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update ATT&CK Technique (Approved)": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "c72f32a9-2839-413f-8318-c42728ba17c7",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "037394dc9c656e807836367553fcb9470afeaace1dc4adb8c80cc370b0899bf4"
+  },
+  "nodeGroups": [],
+  "id": "S7OuYscgcX2llxPL",
+  "tags": []
+}
