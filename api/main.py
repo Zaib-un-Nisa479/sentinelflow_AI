@@ -162,3 +162,26 @@ def report(req: ReportRequest):
 @app.get("/metrics")
 def metrics():
     return get_dashboard_metrics()
+
+
+@app.get("/cases/recent")
+def recent_cases(limit: int = 10):
+    """
+    Returns the most recent cases for the dashboard's activity table.
+    Kept separate from /metrics since that endpoint is aggregate-only —
+    this one exposes individual case rows instead.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT id, ioc, ioc_type, risk_score, verdict, status,
+                  attck_techniques, source, created_at, resolved_at
+           FROM cases
+           ORDER BY created_at DESC
+           LIMIT %s""",
+        (min(limit, 50),),  # hard cap so a bad query param can't pull the whole table
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return {"cases": rows}
